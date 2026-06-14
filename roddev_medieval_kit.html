@@ -1,0 +1,474 @@
+
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+#wrap{position:relative;width:680px;height:420px;overflow:hidden;background:#0d1b3e;border-radius:12px;font-family:monospace;}
+#gameCanvas{display:block;image-rendering:pixelated;}
+#overlay{position:absolute;inset:0;pointer-events:none;display:flex;align-items:center;justify-content:center;}
+#board{position:absolute;pointer-events:all;transform-origin:center center;}
+#hint{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.65);color:#ffd;font-size:11px;padding:5px 14px;border-radius:4px;border:1px solid #664;letter-spacing:1px;transition:opacity 0.3s;}
+#controls{position:absolute;top:10px;right:12px;color:rgba(255,220,100,0.45);font-size:9px;letter-spacing:1px;}
+#audiobtn{position:absolute;top:10px;left:12px;background:rgba(0,0,0,0.5);border:1px solid rgba(255,220,100,0.3);color:rgba(255,220,100,0.6);font-size:9px;padding:4px 8px;border-radius:4px;cursor:pointer;letter-spacing:1px;z-index:10;}
+</style>
+
+<div id="wrap">
+  <canvas id="gameCanvas" width="680" height="420"></canvas>
+  <div id="overlay"><div id="board" style="display:none;"></div></div>
+  <div id="hint">Use WASD ou setas — chegue perto das placas e pressione E</div>
+  <div id="controls">WASD / SETAS</div>
+  <button id="audiobtn" onclick="toggleAudio()">♪ SOM: OFF</button>
+</div>
+
+<script>
+const canvas=document.getElementById('gameCanvas');
+const ctx=canvas.getContext('2d');
+ctx.imageSmoothingEnabled=false;
+const W=680,H=420,WORLD_W=1800,GROUND_Y=310;
+let cam={x:0};
+let player={x:80,y:GROUND_Y-36,vx:0,dir:1,onGround:true};
+let keys={},dialogOpen=false,nearSign=null,time=0;
+let audioCtx=null,audioEnabled=false,stepTimer=0,stepPhase=0;
+let ambientStarted=false,ambientGain=null;
+
+function getAudio(){
+  if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+  return audioCtx;
+}
+
+function toggleAudio(){
+  audioEnabled=!audioEnabled;
+  document.getElementById('audiobtn').textContent='♪ SOM: '+(audioEnabled?'ON':'OFF');
+  if(audioEnabled&&!ambientStarted){startAmbient();ambientStarted=true;}
+  if(audioEnabled){
+    if(audioCtx&&audioCtx.state==='suspended')audioCtx.resume();
+    if(ambientGain)ambientGain.gain.setTargetAtTime(0.035,audioCtx.currentTime,0.5);
+  } else {
+    if(ambientGain)ambientGain.gain.setTargetAtTime(0,audioCtx.currentTime,0.2);
+  }
+}
+
+function playTone(freq,type,vol,dur,attack,decay){
+  if(!audioEnabled)return;
+  const ac=getAudio();
+  const o=ac.createOscillator();
+  const g=ac.createGain();
+  o.connect(g);g.connect(ac.destination);
+  o.type=type||'sine';o.frequency.value=freq;
+  const t=ac.currentTime;
+  g.gain.setValueAtTime(0,t);
+  g.gain.linearRampToValueAtTime(vol||0.1,t+(attack||0.01));
+  g.gain.exponentialRampToValueAtTime(0.001,t+(dur||0.2));
+  o.start(t);o.stop(t+(dur||0.2)+(decay||0));
+}
+
+function playNoise(vol,dur,freq1,freq2){
+  if(!audioEnabled)return;
+  const ac=getAudio();
+  const bufSize=ac.sampleRate*dur;
+  const buf=ac.createBuffer(1,bufSize,ac.sampleRate);
+  const data=buf.getChannelData(0);
+  for(let i=0;i<bufSize;i++)data[i]=(Math.random()*2-1);
+  const src=ac.createBufferSource();
+  src.buffer=buf;
+  const filt=ac.createBiquadFilter();
+  filt.type='bandpass';
+  filt.frequency.value=freq1||400;
+  filt.Q.value=0.5;
+  const g=ac.createGain();
+  g.gain.setValueAtTime(vol,ac.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+dur);
+  src.connect(filt);filt.connect(g);g.connect(ac.destination);
+  src.start();src.stop(ac.currentTime+dur);
+}
+
+function playStep(){
+  if(!audioEnabled)return;
+  playNoise(0.06,0.07,300,600);
+  playTone(180+Math.random()*20,'sine',0.04,0.08);
+}
+
+function playBoardOpen(){
+  if(!audioEnabled)return;
+  const ac=getAudio();
+  [220,330,440,550].forEach((f,i)=>{
+    setTimeout(()=>playTone(f,'triangle',0.12,0.18),i*60);
+  });
+}
+
+function playBoardClose(){
+  if(!audioEnabled)return;
+  [550,440,330,220].forEach((f,i)=>{
+    setTimeout(()=>playTone(f,'triangle',0.08,0.12),i*50);
+  });
+}
+
+function startAmbient(){
+  if(!audioEnabled)return;
+  const ac=getAudio();
+  ambientGain=ac.createGain();
+  ambientGain.gain.value=0;
+  ambientGain.connect(ac.destination);
+  // Deep root drone
+  const o1=ac.createOscillator();
+  o1.type='sine';o1.frequency.value=55;
+  o1.connect(ambientGain);o1.start();
+  // Perfect fifth — adds warmth
+  const o2=ac.createOscillator();
+  o2.type='sine';o2.frequency.value=82.5;
+  o2.connect(ambientGain);o2.start();
+  // Octave, very faint
+  const g3=ac.createGain();g3.gain.value=0.35;
+  const o3=ac.createOscillator();
+  o3.type='sine';o3.frequency.value=110;
+  o3.connect(g3);g3.connect(ambientGain);o3.start();
+  // Slow LFO breathing on volume
+  const lfo=ac.createOscillator();
+  const lg=ac.createGain();
+  lfo.type='sine';lfo.frequency.value=0.06;
+  lg.gain.value=0.012;
+  lfo.connect(lg);lg.connect(ambientGain.gain);lfo.start();
+  // Fade in
+  ambientGain.gain.setTargetAtTime(0.035,ac.currentTime,1.5);
+}
+
+const BOARDS={
+  tavern:{color:'#3a1a05',border:'#c8820a',accent:'#ffd700',render:renderTavern},
+  stats:{color:'#0a1a3a',border:'#4a8aff',accent:'#7ab8ff',render:renderStats},
+  platforms:{color:'#0a2a1a',border:'#2aaa60',accent:'#50e890',render:renderPlatforms},
+  audience:{color:'#1a0a2e',border:'#8a40cc',accent:'#c078ff',render:renderAudience},
+  games:{color:'#1a1005',border:'#cc6820',accent:'#ff9944',render:renderGames},
+  brands:{color:'#2a1a00',border:'#cc8820',accent:'#ffcc44',render:renderBrands},
+  contact:{color:'#0a2a2a',border:'#20aaaa',accent:'#40dddd',render:renderContact}
+};
+
+const signs=[
+  {x:70,label:'INICIO',key:'tavern'},
+  {x:300,label:'NUMEROS',key:'stats'},
+  {x:540,label:'REDES',key:'platforms'},
+  {x:780,label:'AUDIENCIA',key:'audience'},
+  {x:1020,label:'MEUS JOGOS',key:'games'},
+  {x:1260,label:'MARCAS',key:'brands'},
+  {x:1500,label:'CONTATO',key:'contact'},
+];
+
+function openBoard(key){
+  const b=document.getElementById('board');
+  const cfg=BOARDS[key];
+  b.innerHTML='';
+  b.style.cssText=`width:620px;height:380px;border-radius:10px;background:${cfg.color};border:3px solid ${cfg.border};box-shadow:0 0 0 1px rgba(255,255,255,0.07),inset 0 0 60px rgba(0,0,0,0.4);display:block;overflow:hidden;position:relative;transform:scale(0.05) translateY(-800px);opacity:0;transition:transform 0.45s cubic-bezier(0.175,0.885,0.32,1.275),opacity 0.3s ease;`;
+  const inner=document.createElement('div');
+  inner.style.cssText='width:100%;height:100%;padding:22px 28px;';
+  cfg.render(inner,cfg);
+  b.appendChild(inner);
+  b.style.display='block';
+  document.getElementById('hint').style.opacity='0';
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    b.style.transform='scale(1) translateY(0)';
+    b.style.opacity='1';
+  }));
+  playBoardOpen();
+  dialogOpen=true;
+}
+
+function closeBoard(){
+  const b=document.getElementById('board');
+  b.style.transform='scale(0.05) translateY(800px)';
+  b.style.opacity='0';
+  playBoardClose();
+  setTimeout(()=>{b.style.display='none';dialogOpen=false;document.getElementById('hint').style.opacity='1';},400);
+}
+
+function mkTitle(el,txt,accent){
+  const t=document.createElement('div');
+  t.style.cssText=`font-size:14px;font-weight:bold;color:${accent};letter-spacing:2px;margin-bottom:14px;text-align:center;border-bottom:1px solid ${accent}33;padding-bottom:10px;`;
+  t.textContent=txt;el.appendChild(t);
+}
+
+function mkRow(el,items,accent){
+  const r=document.createElement('div');
+  r.style.cssText='display:flex;gap:10px;margin-bottom:10px;';
+  items.forEach(([label,val])=>{
+    const c=document.createElement('div');
+    c.style.cssText=`flex:1;background:rgba(255,255,255,0.06);border:1px solid ${accent}44;border-radius:6px;padding:10px 12px;text-align:center;`;
+    c.innerHTML=`<div style="font-size:17px;font-weight:bold;color:${accent};margin-bottom:4px;">${val}</div><div style="font-size:9px;color:rgba(255,255,255,0.5);letter-spacing:1px;">${label}</div>`;
+    r.appendChild(c);
+  });el.appendChild(r);
+}
+
+function mkBar(el,label,pct,color,accent){
+  const w=document.createElement('div');w.style.cssText='margin-bottom:8px;';
+  w.innerHTML=`<div style="display:flex;justify-content:space-between;margin-bottom:3px;"><span style="font-size:10px;color:rgba(255,255,255,0.7);">${label}</span><span style="font-size:10px;color:${accent};font-weight:bold;">${pct}%</span></div><div style="background:rgba(255,255,255,0.08);border-radius:3px;height:8px;overflow:hidden;"><div style="width:0%;height:100%;background:${color};border-radius:3px;transition:width 0.8s ease 0.2s;" data-w="${pct}%"></div></div>`;
+  el.appendChild(w);
+  setTimeout(()=>{const bar=w.querySelector('[data-w]');if(bar)bar.style.width=bar.dataset.w;},50);
+}
+
+function renderTavern(el,cfg){
+  mkTitle(el,'⚔  BEM-VINDO AO REINO DO RODDEV  ⚔',cfg.accent);
+  const hero=document.createElement('div');
+  hero.style.cssText='display:flex;gap:20px;align-items:flex-start;margin-bottom:14px;';
+  hero.innerHTML=`<div style="flex:0 0 90px;background:rgba(255,255,255,0.05);border:1px solid ${cfg.accent}44;border-radius:8px;padding:12px;text-align:center;"><div style="font-size:32px;margin-bottom:4px;">⚔️</div><div style="font-size:10px;color:${cfg.accent};font-weight:bold;">RODDEV</div><div style="font-size:8px;color:rgba(255,255,255,0.4);margin-top:2px;">LVL 99</div></div><div style="flex:1;"><div style="font-size:11px;color:rgba(255,255,255,0.8);line-height:1.9;">Criador de conteúdo, desenvolvedor de games e reviewer de tecnologia.<br>Um reino construído com mais de <span style="color:${cfg.accent};font-weight:bold;">356 milhões de visualizações</span> combinadas e uma comunidade apaixonada por games e tech.</div></div>`;
+  el.appendChild(hero);
+  mkRow(el,[['YouTube','658,9K'],['TikTok','450K+'],['Instagram','90K+']],cfg.accent);
+  const tags=document.createElement('div');tags.style.cssText='display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;';
+  ['🎮 Games','💻 Tech','🛠 Dev','📱 Reviews','🌍 Lusófono'].forEach(t=>{
+    const tg=document.createElement('span');
+    tg.style.cssText=`background:${cfg.accent}22;border:1px solid ${cfg.accent}44;color:${cfg.accent};font-size:9px;padding:3px 9px;border-radius:3px;letter-spacing:1px;`;
+    tg.textContent=t;tags.appendChild(tg);
+  });
+  el.appendChild(tags);
+  const tip=document.createElement('div');tip.style.cssText='text-align:center;margin-top:14px;font-size:9px;color:rgba(255,255,255,0.25);letter-spacing:1px;';
+  tip.textContent='PRESSIONE WASD PARA FECHAR E EXPLORAR O REINO';el.appendChild(tip);
+}
+
+function renderStats(el,cfg){
+  mkTitle(el,'📜 PERGAMINHO DOS NÚMEROS — ALL TIME',cfg.accent);
+  mkRow(el,[['Views (YouTube+TikTok)','356,7M+'],['Seguidores totais','1,2M+']],cfg.accent);
+  mkRow(el,[['Impressões YT','224,9M'],['CTR Médio YT','6,36%']],cfg.accent);
+  const hl=document.createElement('div');
+  hl.style.cssText=`background:${cfg.accent}18;border:1px solid ${cfg.accent}55;border-radius:6px;padding:10px 14px;margin:8px 0;text-align:center;`;
+  hl.innerHTML=`<div style="font-size:18px;font-weight:bold;color:${cfg.accent};">4,5M+ HORAS ASSISTIDAS</div><div style="font-size:9px;color:rgba(255,255,255,0.4);margin-top:3px;letter-spacing:1px;">COMBINANDO YOUTUBE + TIKTOK · ~16B SEGUNDOS</div>`;
+  el.appendChild(hl);
+  const sub=document.createElement('div');sub.style.cssText=`display:flex;gap:10px;margin-top:8px;`;
+  [{l:'YouTube',v:'256,7M views'},{l:'TikTok',v:'100M+ views'}].forEach(({l,v})=>{
+    const c=document.createElement('div');
+    c.style.cssText=`flex:1;background:rgba(255,255,255,0.04);border:1px solid ${cfg.accent}22;border-radius:5px;padding:7px 10px;`;
+    c.innerHTML=`<div style="font-size:9px;color:${cfg.accent};margin-bottom:2px;">${l}</div><div style="font-size:11px;color:rgba(255,255,255,0.7);">${v}</div>`;
+    sub.appendChild(c);
+  });
+  el.appendChild(sub);
+  const q=document.createElement('div');q.style.cssText='font-size:10px;color:rgba(255,255,255,0.3);text-align:center;margin-top:10px;font-style:italic;';
+  q.textContent='"Mais de um terço de bilhão de visualizações acumuladas"';el.appendChild(q);
+}
+
+function renderPlatforms(el,cfg){
+  mkTitle(el,'📡 TORRE DAS PLATAFORMAS',cfg.accent);
+  const plats=[
+    {icon:'▶',name:'YouTube',stat:'658,9K inscritos',sub:'256,7M views · 3,1M horas assistidas',color:'#ff4444'},
+    {icon:'♪',name:'TikTok',stat:'450K+ seguidores',sub:'100M+ de visualizações',color:'#eeeeee'},
+    {icon:'◈',name:'Instagram',stat:'90K+ seguidores',sub:'Comunidade engajada · Conteúdo visual',color:'#cc66cc'},
+  ];
+  plats.forEach(p=>{
+    const row=document.createElement('div');
+    row.style.cssText=`display:flex;align-items:center;gap:14px;background:rgba(255,255,255,0.05);border:1px solid ${cfg.accent}33;border-radius:7px;padding:11px 14px;margin-bottom:9px;`;
+    row.innerHTML=`<div style="font-size:22px;color:${p.color};width:30px;text-align:center;">${p.icon}</div><div style="flex:1;"><div style="font-size:12px;font-weight:bold;color:${p.color};margin-bottom:2px;">${p.name}</div><div style="font-size:11px;color:${cfg.accent};font-weight:bold;">${p.stat}</div><div style="font-size:9px;color:rgba(255,255,255,0.4);margin-top:1px;">${p.sub}</div></div>`;
+    el.appendChild(row);
+  });
+  const total=document.createElement('div');
+  total.style.cssText=`text-align:center;background:${cfg.accent}18;border:1px solid ${cfg.accent}44;border-radius:6px;padding:8px;font-size:11px;color:${cfg.accent};font-weight:bold;margin-top:4px;`;
+  total.innerHTML='ALCANCE TOTAL COMBINADO: <span style="font-size:15px;">1,2M+</span> SEGUIDORES';
+  el.appendChild(total);
+}
+
+function renderAudience(el,cfg){
+  mkTitle(el,'🔮 ORÁCULO DA AUDIÊNCIA',cfg.accent);
+  const cols=document.createElement('div');cols.style.cssText='display:flex;gap:14px;';
+  const left=document.createElement('div');left.style.cssText='flex:1;';
+  const lbl=document.createElement('div');lbl.style.cssText=`font-size:9px;color:${cfg.accent};letter-spacing:1px;margin-bottom:8px;`;lbl.textContent='FAIXA ETÁRIA (% VIEWS)';left.appendChild(lbl);
+  mkBar(left,'18–24 anos',36,cfg.accent,cfg.accent);
+  mkBar(left,'25–34 anos',16,'#8855cc',cfg.accent);
+  mkBar(left,'35–44 anos',8,'#554488',cfg.accent);
+  mkBar(left,'Outros',40,'#332255',cfg.accent);
+  const right=document.createElement('div');right.style.cssText='flex:0 0 175px;';
+  const rlbl=document.createElement('div');rlbl.style.cssText=`font-size:9px;color:${cfg.accent};letter-spacing:1px;margin-bottom:8px;`;rlbl.textContent='GEOGRAFIA TOP';right.appendChild(rlbl);
+  [['🇧🇷','Brasil','Base principal'],['🇵🇹','Portugal','Alcance global'],['🇦🇴','Angola','Lusófono'],['🇲🇿','Moçambique','Lusófono']].forEach(([flag,name,tag])=>{
+    const g=document.createElement('div');g.style.cssText=`display:flex;align-items:center;gap:8px;background:rgba(255,255,255,0.05);border-radius:5px;padding:6px 9px;margin-bottom:6px;`;
+    g.innerHTML=`<span style="font-size:15px;">${flag}</span><div><div style="font-size:10px;color:rgba(255,255,255,0.85);">${name}</div><div style="font-size:8px;color:${cfg.accent};">${tag}</div></div>`;
+    right.appendChild(g);
+  });
+  cols.appendChild(left);cols.appendChild(right);el.appendChild(cols);
+  const hl=document.createElement('div');hl.style.cssText=`background:${cfg.accent}15;border:1px solid ${cfg.accent}44;border-radius:5px;padding:8px 12px;margin-top:10px;font-size:10px;color:rgba(255,255,255,0.65);text-align:center;`;
+  hl.innerHTML=`Público jovem-adulto, predominantemente masculino — <span style="color:${cfg.accent};">altamente engajado</span> com tecnologia e games.`;
+  el.appendChild(hl);
+}
+
+function renderGames(el,cfg){
+  mkTitle(el,'🎮 FORJA DOS JOGOS — DEV STATS',cfg.accent);
+  mkRow(el,[['Downloads totais','400K+'],['Wishlists Steam','30K+']],cfg.accent);
+  const desc=document.createElement('div');
+  desc.style.cssText=`font-size:10px;color:rgba(255,255,255,0.6);line-height:1.8;margin-bottom:12px;background:rgba(255,255,255,0.04);border:1px solid ${cfg.accent}22;border-radius:6px;padding:10px 14px;`;
+  desc.innerHTML=`O RodDev não só cria conteúdo sobre games — ele <span style="color:${cfg.accent};font-weight:bold;">cria os próprios jogos</span>. Títulos desenvolvidos especialmente para sua comunidade, mostrando um engajamento raro e profundo com o público.`;
+  el.appendChild(desc);
+  const bars=document.createElement('div');bars.style.cssText='margin-bottom:12px;';
+  const bl=document.createElement('div');bl.style.cssText=`font-size:9px;color:${cfg.accent};letter-spacing:1px;margin-bottom:8px;`;bl.textContent='PROVA DE ENGAJAMENTO DA COMUNIDADE';bars.appendChild(bl);
+  mkBar(bars,'Downloads de jogos criados',82,cfg.accent,cfg.accent);
+  mkBar(bars,'Wishlists na Steam',61,'#cc6820',cfg.accent);
+  mkBar(bars,'Retenção de comunidade',90,'#22aa66',cfg.accent);
+  el.appendChild(bars);
+  const hl=document.createElement('div');
+  hl.style.cssText=`background:${cfg.accent}18;border:1px solid ${cfg.accent}44;border-radius:6px;padding:9px 14px;text-align:center;font-size:10px;color:${cfg.accent};font-weight:bold;`;
+  hl.innerHTML='Uma comunidade que não só <em style="color:white;">assiste</em> — ela <em style="color:white;">joga</em> o que o criador faz.';
+  el.appendChild(hl);
+}
+
+function renderBrands(el,cfg){
+  mkTitle(el,'🏰 SALÃO DAS MARCAS PARCEIRAS',cfg.accent);
+  const intro=document.createElement('div');intro.style.cssText=`font-size:10px;color:rgba(255,255,255,0.5);text-align:center;margin-bottom:14px;`;intro.textContent='Marcas que já confiaram no RodDev para chegar à sua audiência:';el.appendChild(intro);
+  const grid=document.createElement('div');grid.style.cssText='display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px;';
+  [['🛢','Petrobras','Energia'],['🍔','McDonald\'s','Food'],['🖱','Logitech','Tech'],['🎮','LevelUp','Games'],['💻','Lenovo','Hardware'],['⚡','Intel','Tech'],['📊','Sebrae','Negócios'],['✦','Sua marca','Próxima!']].forEach(([icon,name,cat],i)=>{
+    const c=document.createElement('div');const isLast=i===7;
+    c.style.cssText=`background:${isLast?cfg.accent+'18':'rgba(255,255,255,0.05)'};border:1px solid ${isLast?cfg.accent:cfg.accent+'33'};border-radius:7px;padding:9px 6px;text-align:center;${isLast?'border-style:dashed;':''}`;
+    c.innerHTML=`<div style="font-size:18px;margin-bottom:3px;">${icon}</div><div style="font-size:9px;color:${isLast?cfg.accent:'rgba(255,255,255,0.75)'};font-weight:bold;">${name}</div><div style="font-size:8px;color:rgba(255,255,255,0.3);">${cat}</div>`;
+    grid.appendChild(c);
+  });
+  el.appendChild(grid);
+  const hl=document.createElement('div');hl.style.cssText=`background:${cfg.accent}18;border:1px solid ${cfg.accent}44;border-radius:5px;padding:8px 14px;font-size:10px;color:${cfg.accent};text-align:center;font-weight:bold;`;
+  hl.textContent='Experiência em Energia · Food · Tech · Hardware · Negócios';el.appendChild(hl);
+}
+
+function renderContact(el,cfg){
+  mkTitle(el,'✉  PORTAL DO CONTATO',cfg.accent);
+  const hero=document.createElement('div');
+  hero.style.cssText=`background:${cfg.accent}15;border:1px solid ${cfg.accent}44;border-radius:7px;padding:12px;text-align:center;margin-bottom:12px;font-size:11px;color:rgba(255,255,255,0.7);line-height:1.8;`;
+  hero.innerHTML=`Pronto para conectar sua marca a <span style="color:${cfg.accent};font-weight:bold;">mais de 356 milhões de views</span> e uma audiência jovem apaixonada por tech e games?`;
+  el.appendChild(hero);
+  const email=document.createElement('div');
+  email.style.cssText=`background:rgba(255,255,255,0.05);border:1px solid ${cfg.accent}55;border-radius:7px;padding:12px;text-align:center;margin-bottom:10px;`;
+  email.innerHTML=`<div style="font-size:9px;color:rgba(255,255,255,0.35);letter-spacing:2px;margin-bottom:5px;">E-MAIL COMERCIAL</div><div style="font-size:15px;color:${cfg.accent};font-weight:bold;">contato@rodgame.dev</div>`;
+  el.appendChild(email);
+  const fmts=document.createElement('div');fmts.style.cssText=`font-size:9px;color:rgba(255,255,255,0.35);letter-spacing:1px;margin-bottom:8px;`;fmts.textContent='FORMATOS DISPONÍVEIS';el.appendChild(fmts);
+  const tags=document.createElement('div');tags.style.cssText='display:flex;flex-wrap:wrap;gap:6px;';
+  ['Vídeo Integrado','Review Dedicado','Menção Patrocinada','Multiplataforma','Jogo Personalizado','Stories','Vídeos Curtos e Longos'].forEach(t=>{
+    const tg=document.createElement('span');
+    tg.style.cssText=`background:${cfg.accent}22;border:1px solid ${cfg.accent}44;color:${cfg.accent};font-size:9px;padding:4px 10px;border-radius:3px;letter-spacing:1px;`;
+    tg.textContent=t;tags.appendChild(tg);
+  });
+  el.appendChild(tags);
+}
+
+document.addEventListener('keydown',e=>{
+  const mv=['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','a','d','w','s'];
+  if(mv.includes(e.key)&&dialogOpen){closeBoard();return;}
+  if(mv.includes(e.key))e.preventDefault();
+  keys[e.key]=true;
+  if((e.key==='e'||e.key==='Enter')&&nearSign&&!dialogOpen)openBoard(nearSign.key);
+  if(e.key==='Escape'&&dialogOpen)closeBoard();
+});
+document.addEventListener('keyup',e=>{keys[e.key]=false;});
+
+function drawSky(){
+  ctx.fillStyle='#0d1b3e';ctx.fillRect(0,0,W,H);
+  const stars=[[40,20],[90,35],[150,15],[210,40],[280,12],[340,28],[400,8],[460,32],[520,18],[580,42],[640,22],[130,50],[700,10],[760,38],[820,25],[880,14],[940,30],[1000,6],[1060,44],[1120,20],[1180,35],[1240,16],[1300,40],[1360,8],[1420,28],[1480,42],[1540,18]];
+  stars.forEach(([sx,sy])=>{
+    const tw=0.5+0.5*Math.sin(time*0.03+sx);
+    ctx.fillStyle=`rgba(255,255,220,${0.3+0.5*tw})`;
+    ctx.fillRect(sx-cam.x*0.08,sy,tw>0.8?2:1,tw>0.8?2:1);
+  });
+  const mx=580-cam.x*0.04;
+  ctx.fillStyle='#fffde0';ctx.beginPath();ctx.arc(mx,52,22,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='#0d1b3e';ctx.beginPath();ctx.arc(mx+10,45,18,0,Math.PI*2);ctx.fill();
+}
+function drawMountains(){
+  ctx.fillStyle='#1a2a5a';
+  const pts=[[0,200],[100,150],[200,180],[320,120],[440,160],[560,140],[680,170],[800,130],[920,155],[1040,125],[1160,145],[1280,160],[1400,140],[1520,170],[1600,200],[1800,210]];
+  ctx.beginPath();ctx.moveTo(-cam.x*0.25,H);pts.forEach(([x,y])=>ctx.lineTo(x-cam.x*0.25,y));ctx.lineTo(WORLD_W,H);ctx.closePath();ctx.fill();
+  ctx.fillStyle='#14204a';
+  const pts2=[[0,230],[150,185],[300,210],[450,168],[600,188],[750,172],[900,192],[1050,162],[1200,182],[1350,170],[1500,188],[1600,210],[1800,230]];
+  ctx.beginPath();ctx.moveTo(-cam.x*0.12,H);pts2.forEach(([x,y])=>ctx.lineTo(x-cam.x*0.12,y));ctx.lineTo(WORLD_W,H);ctx.closePath();ctx.fill();
+}
+function drawGround(){
+  ctx.fillStyle='#2d4a1e';ctx.fillRect(-cam.x,GROUND_Y,WORLD_W,H-GROUND_Y);
+  ctx.fillStyle='#3a6025';for(let x=0;x<WORLD_W;x+=16)ctx.fillRect(x-cam.x,GROUND_Y,16,6);
+  ctx.fillStyle='#4a7a30';for(let x=0;x<WORLD_W;x+=32)ctx.fillRect(x+8-cam.x,GROUND_Y,8,3);
+  ctx.fillStyle='#1a2a10';ctx.fillRect(-cam.x,GROUND_Y+30,WORLD_W,H-GROUND_Y-30);
+  ctx.fillStyle='#583a1a';
+  for(let x=0;x<WORLD_W;x+=40){ctx.fillRect(x-cam.x,GROUND_Y+35,36,4);ctx.fillStyle='#4a2e10';ctx.fillRect(x+2-cam.x,GROUND_Y+35,34,2);ctx.fillStyle='#583a1a';}
+}
+function drawCastle(wx){
+  const x=wx-cam.x;
+  ctx.fillStyle='#3a3050';ctx.fillRect(x,GROUND_Y-90,80,90);
+  ctx.fillStyle='#2e2540';for(let i=0;i<4;i++)ctx.fillRect(x+i*22,GROUND_Y-100,16,14);
+  ctx.fillStyle='#4a3060';ctx.fillRect(x+5,GROUND_Y-70,15,25);
+  ctx.fillStyle='#c84040';ctx.fillRect(x-2,GROUND_Y-105,4,22);
+  ctx.fillStyle='#e05050';ctx.fillRect(x,GROUND_Y-105,3,8);ctx.fillRect(x-2,GROUND_Y-97,4,5);
+  ctx.fillStyle='#ffd700';ctx.fillRect(x+24,GROUND_Y-80,10,10);ctx.fillRect(x+46,GROUND_Y-75,10,10);
+}
+function drawTree(wx,h){
+  const x=wx-cam.x;
+  ctx.fillStyle='#4a3010';ctx.fillRect(x+6,GROUND_Y-h+20,8,h-20);
+  ctx.fillStyle='#1a5a20';ctx.fillRect(x,GROUND_Y-h-10,20,30);
+  ctx.fillStyle='#267a2a';ctx.fillRect(x+2,GROUND_Y-h-25,16,20);
+  ctx.fillStyle='#2a9a30';ctx.fillRect(x+5,GROUND_Y-h-38,10,16);
+}
+function drawTorch(wx){
+  const x=wx-cam.x;
+  ctx.fillStyle='#6a4010';ctx.fillRect(x,GROUND_Y-45,5,40);
+  ctx.fillStyle='#8a5a20';ctx.fillRect(x-2,GROUND_Y-48,9,6);
+  const f=Math.sin(time*0.3+wx)*2;
+  ctx.fillStyle='#ff6010';ctx.fillRect(x-1+f*0.3,GROUND_Y-58,7,12);
+  ctx.fillStyle='#ffb020';ctx.fillRect(x+f*0.2,GROUND_Y-62,5,8);
+  ctx.fillStyle='#ffe060';ctx.fillRect(x+1,GROUND_Y-64,3,4);
+}
+function drawSign(sign){
+  const x=sign.x-cam.x;
+  const near=nearSign===sign;
+  const pulse=near?(0.5+0.5*Math.sin(time*0.15)):0;
+  ctx.fillStyle='#5a3010';ctx.fillRect(x+7,GROUND_Y-55,6,50);
+  ctx.fillStyle='#8a5520';ctx.fillRect(x,GROUND_Y-65,60,36);
+  ctx.fillStyle='#6a4010';ctx.fillRect(x+2,GROUND_Y-63,56,32);
+  ctx.fillStyle='#4a2a05';ctx.fillRect(x+4,GROUND_Y-61,52,28);
+  ctx.fillStyle='#c8a060';ctx.font='bold 7px monospace';ctx.textAlign='center';
+  ctx.fillText(sign.label,x+30,GROUND_Y-48);
+  if(near){
+    ctx.fillStyle=`rgba(255,220,80,${0.7+pulse*0.3})`;ctx.font='7px monospace';ctx.fillText('[E] VER',x+30,GROUND_Y-38);
+    ctx.strokeStyle=`rgba(255,200,60,${0.3+pulse*0.4})`;ctx.lineWidth=1.5;ctx.strokeRect(x-2,GROUND_Y-67,64,40);
+  }
+  ctx.textAlign='left';
+}
+function drawPlayer(){
+  const px=Math.round(player.x-cam.x),py=Math.round(player.y);
+  const wo=player.onGround&&Math.abs(player.vx)>0.5?Math.sin(time*0.25)*2:0;
+  const d=player.dir;
+  ctx.save();
+  if(d<0){ctx.translate(px+16,0);ctx.scale(-1,1);ctx.translate(-px,0);}
+  ctx.fillStyle='#c8a870';ctx.fillRect(px+5,py+4+wo,10,10);
+  ctx.fillStyle='#707088';ctx.fillRect(px+3,py+wo,14,10);ctx.fillRect(px+3,py+3+wo,14,4);
+  ctx.fillStyle='#9090b0';ctx.fillRect(px+3,py+1+wo,14,6);
+  ctx.fillStyle='#504860';ctx.fillRect(px+3,py+wo,14,3);ctx.fillRect(px+3,py+wo,2,8);ctx.fillRect(px+15,py+wo,2,8);
+  ctx.fillStyle='#fff';ctx.fillRect(px+6,py+4+wo,3,3);ctx.fillRect(px+10,py+4+wo,3,3);
+  ctx.fillStyle='#223';ctx.fillRect(px+7,py+5+wo,2,2);ctx.fillRect(px+11,py+5+wo,2,2);
+  ctx.fillStyle='#8080a8';ctx.fillRect(px+2,py+13+wo,12,14);
+  const lo=player.onGround&&Math.abs(player.vx)>0.5?Math.sin(time*0.25)*3:0;
+  ctx.fillStyle='#5a5878';ctx.fillRect(px+3,py+26+wo,5,8+lo);ctx.fillRect(px+10,py+26+wo,5,8-lo);
+  ctx.fillStyle='#484060';ctx.fillRect(px+3,py+32+wo+lo,6,4);ctx.fillRect(px+10,py+32+wo-lo,6,4);
+  ctx.fillStyle='#7888b0';ctx.fillRect(px-1,py+14+wo,4,10);ctx.fillRect(px+15,py+14+wo,4,10);
+  if(d>0){ctx.fillStyle='#c0c0c0';ctx.fillRect(px+17,py+13+wo,2,18);ctx.fillStyle='#a0a0b0';ctx.fillRect(px+16,py+13+wo,3,3);ctx.fillRect(px+17,py+29+wo,4,2);}
+  const co=Math.sin(time*0.08)*2;
+  ctx.fillStyle='#9020a0';ctx.beginPath();ctx.moveTo(px+3,py+13+wo);ctx.lineTo(px+13,py+13+wo);ctx.lineTo(px+11+co,py+28+wo);ctx.lineTo(px+2+co,py+28+wo);ctx.closePath();ctx.fill();
+  ctx.fillStyle='#b030c0';ctx.fillRect(px+3,py+13+wo,10,5);
+  ctx.restore();
+}
+
+function update(){
+  time++;
+  if(dialogOpen)return;
+  const spd=2.8;
+  const moving=(keys['ArrowLeft']||keys['a']||keys['ArrowRight']||keys['d']);
+  if(keys['ArrowLeft']||keys['a']){player.vx=-spd;player.dir=-1;}
+  else if(keys['ArrowRight']||keys['d']){player.vx=spd;player.dir=1;}
+  else player.vx*=0.7;
+  if(moving&&player.onGround){
+    stepTimer++;
+    if(stepTimer>=18){stepTimer=0;playStep();}
+  } else {stepTimer=0;}
+  player.x+=player.vx;
+  player.x=Math.max(20,Math.min(WORLD_W-36,player.x));
+  player.y=GROUND_Y-36;player.onGround=true;
+  const target=Math.max(0,Math.min(WORLD_W-W,player.x-W/3));
+  cam.x+=(target-cam.x)*0.08;
+  nearSign=null;
+  signs.forEach(s=>{if(Math.abs(player.x-(s.x+30))<50)nearSign=s;});
+}
+
+function draw(){
+  ctx.clearRect(0,0,W,H);
+  drawSky();drawMountains();
+  drawCastle(10);drawCastle(1680);
+  [80,240,380,550,660,820,980,1100,1250,1380,1500,1620].forEach((tx,i)=>drawTree(tx,45+i%3*8));
+  [130,300,480,620,750,900,1050,1200,1380,1530].forEach(tx=>drawTorch(tx));
+  drawGround();
+  signs.forEach(s=>drawSign(s));
+  drawPlayer();
+}
+
+function loop(){update();draw();requestAnimationFrame(loop);}
+loop();
+</script>
