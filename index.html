@@ -1,12 +1,12 @@
 
 <style>
-*{margin:0;padding:0;box-sizing:border-box;}
-#wrap{position:relative;width:680px;height:420px;overflow:hidden;background:#0d1b3e;border-radius:12px;font-family:monospace;}
-#gameCanvas{display:block;image-rendering:pixelated;}
+*{margin:0;padding:0;box-sizing:border-box;}html,body{width:100%;height:100%;overflow:hidden;background:#000;}
+#wrap{position:fixed;inset:0;width:100%;height:100%;overflow:hidden;background:#0d1b3e;font-family:monospace;}
+#gameCanvas{display:block;width:100%;height:100%;image-rendering:pixelated;image-rendering:crisp-edges;}
 #overlay{position:absolute;inset:0;pointer-events:none;display:flex;align-items:center;justify-content:center;}
 #board{position:absolute;pointer-events:all;transform-origin:center center;}
 #hint{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.65);color:#ffd;font-size:11px;padding:5px 14px;border-radius:4px;border:1px solid #664;letter-spacing:1px;transition:opacity 0.3s;}
-#controls{position:absolute;top:10px;right:12px;color:rgba(255,220,100,0.45);font-size:9px;letter-spacing:1px;}
+#fsbtn{position:absolute;top:10px;right:12px;background:rgba(0,0,0,0.5);border:1px solid rgba(255,220,100,0.3);color:rgba(255,220,100,0.6);font-size:9px;padding:4px 8px;border-radius:4px;cursor:pointer;letter-spacing:1px;z-index:10;}
 #audiobtn{position:absolute;top:10px;left:12px;background:rgba(0,0,0,0.5);border:1px solid rgba(255,220,100,0.3);color:rgba(255,220,100,0.6);font-size:9px;padding:4px 8px;border-radius:4px;cursor:pointer;letter-spacing:1px;z-index:10;}
 </style>
 
@@ -14,8 +14,8 @@
   <canvas id="gameCanvas" width="680" height="420"></canvas>
   <div id="overlay"><div id="board" style="display:none;"></div></div>
   <div id="hint">Use WASD ou setas — chegue perto das placas e pressione E</div>
-  <div id="controls">WASD / SETAS</div>
-  <button id="audiobtn" onclick="toggleAudio()">♪ SOM: OFF</button>
+  <button id="fsbtn" onclick="toggleFS()">⛶ TELA CHEIA</button>
+  <button id="audiobtn" onclick="toggleAudio()">♪ SOM: ON</button>
 </div>
 
 <script>
@@ -26,7 +26,7 @@ const W=680,H=420,WORLD_W=1800,GROUND_Y=310;
 let cam={x:0};
 let player={x:80,y:GROUND_Y-36,vx:0,dir:1,onGround:true};
 let keys={},dialogOpen=false,nearSign=null,time=0;
-let audioCtx=null,audioEnabled=false,stepTimer=0,stepPhase=0;
+let audioCtx=null,audioEnabled=true,stepTimer=0,stepPhase=0;
 let ambientStarted=false,ambientGain=null;
 
 function getAudio(){
@@ -45,6 +45,19 @@ function toggleAudio(){
     if(ambientGain)ambientGain.gain.setTargetAtTime(0,audioCtx.currentTime,0.2);
   }
 }
+
+function toggleFS(){
+  if(!document.fullscreenElement){
+    document.documentElement.requestFullscreen().catch(()=>{});
+    document.getElementById('fsbtn').textContent='⛶ JANELA';
+  } else {
+    document.exitFullscreen();
+    document.getElementById('fsbtn').textContent='⛶ TELA CHEIA';
+  }
+}
+document.addEventListener('fullscreenchange',()=>{
+  if(!document.fullscreenElement)document.getElementById('fsbtn').textContent='⛶ TELA CHEIA';
+});
 
 function playTone(freq,type,vol,dur,attack,decay){
   if(!audioEnabled)return;
@@ -281,21 +294,19 @@ function renderAudience(el,cfg){
 }
 
 function renderGames(el,cfg){
-  mkTitle(el,'🎮 FORJA DOS JOGOS — DEV STATS',cfg.accent);
-  mkRow(el,[['Downloads totais','400K+'],['Wishlists Steam','30K+']],cfg.accent);
-  const desc=document.createElement('div');
-  desc.style.cssText=`font-size:10px;color:rgba(255,255,255,0.6);line-height:1.8;margin-bottom:12px;background:rgba(255,255,255,0.04);border:1px solid ${cfg.accent}22;border-radius:6px;padding:10px 14px;`;
-  desc.innerHTML=`O RodDev não só cria conteúdo sobre games — ele <span style="color:${cfg.accent};font-weight:bold;">cria os próprios jogos</span>. Títulos desenvolvidos especialmente para sua comunidade, mostrando um engajamento raro e profundo com o público.`;
-  el.appendChild(desc);
-  const bars=document.createElement('div');bars.style.cssText='margin-bottom:12px;';
-  const bl=document.createElement('div');bl.style.cssText=`font-size:9px;color:${cfg.accent};letter-spacing:1px;margin-bottom:8px;`;bl.textContent='PROVA DE ENGAJAMENTO DA COMUNIDADE';bars.appendChild(bl);
-  mkBar(bars,'Downloads de jogos criados',82,cfg.accent,cfg.accent);
-  mkBar(bars,'Wishlists na Steam',61,'#cc6820',cfg.accent);
-  mkBar(bars,'Retenção de comunidade',90,'#22aa66',cfg.accent);
-  el.appendChild(bars);
+  mkTitle(el,'🎮 FORJA DOS JOGOS — JOGOS QUE EU CRIEI',cfg.accent);
+  const intro=document.createElement('div');
+  intro.style.cssText=`font-size:10px;color:rgba(255,255,255,0.72);line-height:1.9;margin-bottom:12px;background:rgba(255,255,255,0.04);border:1px solid ${cfg.accent}22;border-radius:6px;padding:11px 14px;`;
+  intro.innerHTML=`Além de criar conteúdo sobre games, eu mesmo desenvolvo os meus próprios jogos. Cada título foi pensado para a minha comunidade — e os números provam que eles realmente jogam o que eu faço.`;
+  el.appendChild(intro);
+  mkRow(el,[['Downloads Totais','400K+'],['Wishlists Steam','30K+']],cfg.accent);
+  const analysis=document.createElement('div');
+  analysis.style.cssText=`background:${cfg.accent}15;border:1px solid ${cfg.accent}44;border-radius:7px;padding:11px 14px;margin:10px 0;`;
+  analysis.innerHTML=`<div style="font-size:9px;color:${cfg.accent};letter-spacing:1px;margin-bottom:7px;">ANÁLISE DE CONVERSÃO — BASEADA NOS DADOS REAIS</div><div style="font-size:10px;color:rgba(255,255,255,0.65);line-height:1.85;">Tenho <span style="color:${cfg.accent};font-weight:bold;">658,9K inscritos</span> no YouTube. Meus jogos acumularam <span style="color:${cfg.accent};font-weight:bold;">400K+ downloads</span> — o que representa cerca de <span style="color:white;font-weight:bold;">61% dos meus inscritos</span> tendo baixado pelo menos um dos meus títulos.<br><span style="color:rgba(255,255,255,0.4);font-size:9px;">(400K downloads ÷ 658,9K inscritos ≈ 61% de taxa de conversão)</span></div>`;
+  el.appendChild(analysis);
   const hl=document.createElement('div');
-  hl.style.cssText=`background:${cfg.accent}18;border:1px solid ${cfg.accent}44;border-radius:6px;padding:9px 14px;text-align:center;font-size:10px;color:${cfg.accent};font-weight:bold;`;
-  hl.innerHTML='Uma comunidade que não só <em style="color:white;">assiste</em> — ela <em style="color:white;">joga</em> o que o criador faz.';
+  hl.style.cssText=`background:${cfg.accent}18;border:1px solid ${cfg.accent}44;border-radius:6px;padding:9px 14px;text-align:center;font-size:10px;color:${cfg.accent};font-weight:bold;margin-top:4px;`;
+  hl.innerHTML='Minha comunidade não só <em style="color:white;">assiste</em> — ela <em style="color:white;">joga</em> o que eu crio.';
   el.appendChild(hl);
 }
 
@@ -335,6 +346,7 @@ function renderContact(el,cfg){
 }
 
 document.addEventListener('keydown',e=>{
+  if(audioEnabled&&!ambientStarted){startAmbient();ambientStarted=true;}
   const mv=['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','a','d','w','s'];
   if(mv.includes(e.key)&&dialogOpen){closeBoard();return;}
   if(mv.includes(e.key))e.preventDefault();
