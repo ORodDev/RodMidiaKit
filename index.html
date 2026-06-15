@@ -74,6 +74,37 @@
     font-weight: 900;
   }
 
+  /* Mobile onboarding overlay */
+  #mobileOnboard {
+    position: absolute;
+    inset: 0;
+    background: rgba(6, 12, 30, 0.93);
+    z-index: 18;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    font-family: monospace;
+    animation: tsFadeIn 0.5s ease forwards;
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  #mob-onboard-inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 32px 28px;
+    border: 2px solid rgba(255, 215, 0, 0.28);
+    border-radius: 10px;
+    background: rgba(0, 0, 0, 0.45);
+    max-width: 300px;
+    text-align: center;
+  }
+  #mobileOnboard.mob-exit {
+    animation: tsFadeOut 0.35s ease forwards !important;
+    pointer-events: none;
+  }
+
   /* Responsive styles & enhancements */
   @media (pointer: coarse) {
     #hint {
@@ -99,9 +130,9 @@
 <div id="wrap">
   <canvas id="gameCanvas"></canvas>
   <div id="overlay"><div id="board" style="display:none;"></div></div>
-  <div id="hint">WASD / setas · ESPAÇO ou ↑ para saltar · pressione E nas placas</div>
+  <div id="hint">Use ← → para caminhar · pressione E para abrir cada placa</div>
   <button id="fsbtn" onclick="toggleFS()">⛶ TELA CHEIA</button>
-  <button id="audiobtn" onclick="toggleAudio()">♪ SOM: ON</button>
+  <button id="audiobtn" onclick="toggleAudio()">♪ SOM: OFF</button>
 
   <!-- Mobile Gamepad Controls -->
   <div id="mobileControls" class="mobile-hud">
@@ -110,14 +141,25 @@
       <button class="btn-mobile" id="btn-right">▶</button>
     </div>
     <div class="mobile-group">
-      <button class="btn-mobile" id="btn-interact" style="display: none;">⚔</button>
+      <button class="btn-mobile" id="btn-interact" style="display:none;flex-direction:column;gap:2px;font-size:16px;"><span style="line-height:1;">⚔</span><span style="font-size:8px;letter-spacing:1px;font-weight:900;line-height:1;">VER</span></button>
       <button class="btn-mobile" id="btn-jump">▲</button>
+    </div>
+  </div>
+
+  <div id="mobileOnboard">
+    <div id="mob-onboard-inner">
+      <div style="font-size:34px;margin-bottom:14px;">⚔</div>
+      <div style="font-size:15px;font-weight:bold;color:#ffd700;letter-spacing:2px;margin-bottom:12px;">BEM-VINDO AO REINO</div>
+      <div style="font-size:11px;color:rgba(255,255,255,0.78);line-height:2;margin-bottom:20px;">Use os botões <strong style="color:#ffd700;">◀ ▶</strong> para caminhar<br>Quando ver uma placa, toque em <strong style="color:#ffd700;">VER</strong> para abrir<br><br>Há <strong style="color:#ffd700;">8 seções</strong> para explorar neste reino</div>
+      <div style="font-size:14px;color:#ffd700;letter-spacing:4px;margin-bottom:18px;">→ → → → →</div>
+      <div style="font-size:9px;color:rgba(255,255,255,0.3);letter-spacing:2px;">TOQUE PARA COMEÇAR</div>
     </div>
   </div>
 
   <div id="titlescreen" onclick="dismissTitle()">
     <div id="ts-frame">
       <div id="ts-logo">MEDIEVAL KIT<br><span>do RodDev</span></div>
+      <div id="ts-sub" style="font-family:monospace;font-size:clamp(8px,1.1vw,11px);color:rgba(255,200,120,0.58);letter-spacing:3px;text-align:center;margin-top:-4px;">UM PORTFÓLIO INTERATIVO</div>
       <div id="ts-sep">⚔ &nbsp;&nbsp; ★ &nbsp;&nbsp; ⚔</div>
       <div id="ts-press">Pressione qualquer tecla para começar</div>
     </div>
@@ -152,11 +194,12 @@ resizeCanvas();
 let cam={x:0};
 let player={x:80,y:GROUND_Y-36,vx:0,vy:0,dir:1,onGround:true};
 let keys={},dialogOpen=false,nearSign=null,time=0,titleActive=true;
-let audioCtx=null,audioEnabled=true,stepTimer=0,stepPhase=0;
+let audioCtx=null,audioEnabled=false,stepTimer=0,stepPhase=0;
 let ambientStarted=false,ambientGain=null;
 let jumpLatch=false,coyoteFrames=0;
 let particles=[];
 let allCoinsCelebration=0;
+let boardsVisited=new Set(),boardOpenedAt=0,directionHintTimer=0;
 const GRAVITY=0.45,JUMP_FORCE=-9.5,MAX_FALL=14;
 const terrainPts=[
   [0,310],[60,310],[160,304],[240,293],[310,300],[380,310],
@@ -338,13 +381,13 @@ const BOARDS={
 
 const signs=[
   {x:15,label:'SOCIAIS',key:'social',portal:true},
-  {x:140,label:'INICIO',key:'tavern'},
-  {x:300,label:'NUMEROS',key:'stats'},
-  {x:540,label:'REDES',key:'platforms'},
-  {x:780,label:'AUDIENCIA',key:'audience'},
-  {x:1020,label:'MEUS JOGOS',key:'games'},
-  {x:1260,label:'MARCAS',key:'brands'},
-  {x:1500,label:'CONTATO',key:'contact'},
+  {x:140,label:'INICIO',key:'tavern',sub:'Quem é o RodDev?'},
+  {x:300,label:'NUMEROS',key:'stats',sub:'356M+ visualizações'},
+  {x:540,label:'REDES',key:'platforms',sub:'658K inscritos'},
+  {x:780,label:'AUDIENCIA',key:'audience',sub:'Público & Alcance'},
+  {x:1020,label:'MEUS JOGOS',key:'games',sub:'400K+ downloads'},
+  {x:1260,label:'MARCAS',key:'brands',sub:'Marcas parceiras'},
+  {x:1500,label:'CONTATO',key:'contact',sub:'contato@rodgame.dev'},
   {x:1720,label:'SOCIAIS',key:'social',portal:true},
 ];
 
@@ -352,6 +395,8 @@ function openBoard(key){
   const b=document.getElementById('board');
   const cfg=BOARDS[key];
   b.innerHTML='';
+  boardsVisited.add(key);
+  boardOpenedAt=Date.now();
   
   const S = Math.min(1, (window.innerWidth - 24) / 620, (window.innerHeight - 24) / 380);
   
@@ -417,6 +462,22 @@ function dismissTitle(){
   ts.classList.add('ts-exit');
   setTimeout(()=>{ts.remove();},450);
   if(audioEnabled&&!ambientStarted){startAmbient();ambientStarted=true;}
+  if(!isTouchDevice)directionHintTimer=240;
+  if(isTouchDevice){
+    const mob=document.getElementById('mobileOnboard');
+    if(mob){
+      mob.style.display='flex';
+      let mobDone=false;
+      const dismissMob=()=>{
+        if(mobDone)return;mobDone=true;
+        mob.classList.add('mob-exit');
+        setTimeout(()=>{mob.style.display='none';},350);
+      };
+      mob.addEventListener('touchstart',dismissMob,{once:true,passive:false});
+      mob.addEventListener('click',dismissMob,{once:true});
+      setTimeout(dismissMob,6000);
+    }
+  }
 }
 
 function mkTitle(el,txt,accent){
@@ -599,7 +660,7 @@ document.addEventListener('keydown',e=>{
   if(titleActive){dismissTitle();return;}
   if(audioEnabled&&!ambientStarted){startAmbient();ambientStarted=true;}
   const mv=['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','a','d','w','s',' '];
-  if(mv.includes(e.key)&&dialogOpen){closeBoard();return;}
+  if(mv.includes(e.key)&&dialogOpen&&Date.now()-boardOpenedAt>500){closeBoard();return;}
   if(mv.includes(e.key))e.preventDefault();
   keys[e.key]=true;
   if((e.key==='e'||e.key==='Enter')&&nearSign&&!dialogOpen)openBoard(nearSign.key);
@@ -812,10 +873,13 @@ function drawSign(sign){
   ctx.fillStyle='#6a4010';ctx.fillRect(x+2,gy-66,68,34);
   ctx.fillStyle='#4a2a05';ctx.fillRect(x+4,gy-64,64,30);
   ctx.fillStyle='#c8a060';ctx.font='bold 11px monospace';ctx.textAlign='center';
-  ctx.fillText(sign.label,x+36,gy-49);
+  ctx.fillText(sign.label,x+36,gy-50);
   if(near){
-    ctx.fillStyle=`rgba(255,220,80,${0.7+pulse*0.3})`;ctx.font='bold 10px monospace';ctx.fillText('[E] VER',x+36,gy-37);
+    ctx.fillStyle=`rgba(255,220,80,${0.7+pulse*0.3})`;ctx.font='bold 9px monospace';ctx.fillText('[E] VER',x+36,gy-38);
     ctx.strokeStyle=`rgba(255,200,60,${0.3+pulse*0.4})`;ctx.lineWidth=1.5;ctx.strokeRect(x-2,gy-70,76,44);
+  } else if(sign.sub){
+    ctx.fillStyle='rgba(200,160,80,0.65)';ctx.font='7px monospace';
+    ctx.fillText(sign.sub,x+36,gy-39);
   }
   ctx.textAlign='left';
 }
@@ -921,14 +985,25 @@ function drawCelebration(){
 }
 function drawHUD(){
   if(dialogOpen||titleActive)return;
+  // Section counter — always visible from start
+  const totalBoards=Object.keys(BOARDS).length;
+  const seenBoards=boardsVisited.size;
+  const boardsDone=seenBoards===totalBoards;
+  ctx.fillStyle='rgba(0,0,0,0.55)';ctx.fillRect(W/2-58,4,116,20);
+  if(boardsDone){ctx.strokeStyle='rgba(255,215,0,0.55)';ctx.lineWidth=1;ctx.strokeRect(W/2-58,4,116,20);}
+  ctx.fillStyle=boardsDone?'#ffd700':'rgba(255,215,0,0.65)';
+  ctx.font='bold 9px monospace';ctx.textAlign='center';
+  ctx.fillText(`SEÇÕES: ${seenBoards}/${totalBoards}`,W/2,17);
+  // Coin counter — shows after first coin
   const tot=collectibles.length,col=collectibles.filter(c=>c.collected).length;
-  if(col===0)return;
-  const done=col===tot;
-  ctx.fillStyle='rgba(0,0,0,0.5)';ctx.fillRect(W-86,4,82,20);
-  if(done){ctx.strokeStyle='rgba(255,215,0,0.55)';ctx.lineWidth=1;ctx.strokeRect(W-86,4,82,20);}
-  ctx.fillStyle=done?'#ffd700':'rgba(255,210,50,0.78)';
-  ctx.font='bold 10px monospace';ctx.textAlign='right';
-  ctx.fillText(`\u2726 ${col}/${tot}`,W-8,17);
+  if(col>0){
+    const done=col===tot;
+    ctx.fillStyle='rgba(0,0,0,0.5)';ctx.fillRect(W-86,4,82,20);
+    if(done){ctx.strokeStyle='rgba(255,215,0,0.55)';ctx.lineWidth=1;ctx.strokeRect(W-86,4,82,20);}
+    ctx.fillStyle=done?'#ffd700':'rgba(255,210,50,0.78)';
+    ctx.font='bold 10px monospace';ctx.textAlign='right';
+    ctx.fillText(`\u2726 ${col}/${tot}`,W-8,17);
+  }
   ctx.textAlign='left';
 }
 function playJump(){
@@ -946,6 +1021,7 @@ function playCollect(){
 }
 function update(){
   time++;
+  if(directionHintTimer>0&&!dialogOpen&&!titleActive)directionHintTimer--;
 
   // Mobile HUD visibility & interact update
   const mobHUD = document.getElementById('mobileControls');
@@ -1030,8 +1106,21 @@ function draw(){
   drawPlayer();
   drawCelebration();
   drawHUD();
+  drawDirectionHint();
 }
 
+function drawDirectionHint(){
+  if(isTouchDevice||directionHintTimer<=0||dialogOpen||titleActive)return;
+  const fadeIn=directionHintTimer>210?(240-directionHintTimer)/30:1;
+  const fadeOut=directionHintTimer<30?directionHintTimer/30:1;
+  const a=Math.min(fadeIn,fadeOut);
+  ctx.save();ctx.globalAlpha=a;
+  ctx.fillStyle='rgba(0,0,0,0.72)';ctx.fillRect(W/2-172,H/2-16,344,30);
+  ctx.strokeStyle='rgba(255,215,0,0.32)';ctx.lineWidth=1;ctx.strokeRect(W/2-172,H/2-16,344,30);
+  ctx.fillStyle='#ffd700';ctx.font='bold 10px monospace';ctx.textAlign='center';
+  ctx.fillText('→  CAMINHE E ABRA AS PLACAS PARA ME CONHECER  →',W/2,H/2+5);
+  ctx.textAlign='left';ctx.restore();
+}
 function loop(){update();draw();requestAnimationFrame(loop);}
 loop();
 </script>
