@@ -25,13 +25,31 @@
     border-radius: 8px;
     letter-spacing: 0.5px;
     text-align: center;
-    transition: opacity 0.3s;
+    transition: top 0.9s cubic-bezier(0.25, 1, 0.5, 1),
+                bottom 0.9s cubic-bezier(0.25, 1, 0.5, 1),
+                transform 0.9s cubic-bezier(0.25, 1, 0.5, 1),
+                padding 0.9s cubic-bezier(0.25, 1, 0.5, 1),
+                font-size 0.9s cubic-bezier(0.25, 1, 0.5, 1),
+                opacity 0.4s ease;
     z-index: 12;
     display: flex;
     flex-direction: column;
     gap: 4px;
     max-width: 90%;
     pointer-events: auto;
+  }
+  #hint.hint-center {
+    top: 50% !important;
+    bottom: auto !important;
+    transform: translate(-50%, -50%) !important;
+    padding: 24px 38px !important;
+    font-size: 15px !important;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.85), inset 0 0 15px rgba(0,0,0,0.6) !important;
+    border-color: #ffd700 !important;
+  }
+  #hint.hint-center #hint-controls {
+    font-size: 12px !important;
+    margin-top: 6px !important;
   }
   @media (max-width: 768px), (pointer: coarse) {
     #hint {
@@ -160,7 +178,7 @@
 <div id="wrap">
   <canvas id="gameCanvas"></canvas>
   <div id="overlay"><div id="board" style="display:none;"></div></div>
-  <div id="hint">
+  <div id="hint" class="hint-center" style="opacity: 0; pointer-events: none;">
     <div style="font-weight: bold; color: #ffd700; letter-spacing: 1.5px; font-size: 11px; text-transform: uppercase; margin-bottom: 2px;">💻 Portfólio & Media Kit Interativo</div>
     <div id="hint-controls" style="color: rgba(255,255,255,0.85); font-size: 10px;">
       Use as teclas <strong style="color: #ff9944; background: rgba(0,0,0,0.35); padding: 1px 5px; border-radius: 3px; border: 1px solid rgba(255,215,0,0.2);">← →</strong> ou <strong style="color: #ff9944; background: rgba(0,0,0,0.35); padding: 1px 5px; border-radius: 3px; border: 1px solid rgba(255,215,0,0.2);">A D</strong> para andar · <strong style="color: #ff9944; background: rgba(0,0,0,0.35); padding: 1px 5px; border-radius: 3px; border: 1px solid rgba(255,215,0,0.2);">E / ENTER</strong> para ver as placas
@@ -235,6 +253,8 @@ let jumpLatch=false,coyoteFrames=0;
 let particles=[];
 let allCoinsCelebration=0;
 let boardsVisited=new Set(),boardOpenedAt=0;
+let onboardStartTime = 0;
+let onboardPhase = 'none';
 const GRAVITY=0.45,JUMP_FORCE=-9.5,MAX_FALL=14;
 const terrainPts=[
   [0,310],[60,310],[160,304],[240,293],[310,300],[380,310],
@@ -482,6 +502,25 @@ function closeBoard(){
   playBoardClose();
   setTimeout(()=>{b.style.display='none';dialogOpen=false;if(!isTouchDevice)document.getElementById('hint').style.opacity='1';},400);
 }
+function triggerHintDockTransition() {
+  if (onboardPhase === 'centered') {
+    const elapsed = Date.now() - onboardStartTime;
+    if (elapsed >= 3000) {
+      onboardPhase = 'animating';
+      setTimeout(() => {
+        const hint = document.getElementById('hint');
+        if (hint) {
+          hint.classList.remove('hint-center');
+        }
+        onboardPhase = 'docked';
+      }, 2000);
+    }
+  }
+}
+
+window.addEventListener('mousedown', triggerHintDockTransition);
+window.addEventListener('touchstart', triggerHintDockTransition, { passive: true });
+
 function playLogoSound(){
   const ac=getAudio();
   if(ac.state==='suspended')ac.resume();
@@ -497,6 +536,16 @@ function dismissTitle(){
   ts.classList.add('ts-exit');
   setTimeout(()=>{ts.remove();},450);
   if(audioEnabled&&!ambientStarted){startAmbient();ambientStarted=true;}
+
+  // Show the beautifully centered hint/controls overlay
+  const hint = document.getElementById('hint');
+  if (hint) {
+    hint.style.opacity = '1';
+    hint.style.pointerEvents = 'auto';
+  }
+  onboardStartTime = Date.now();
+  onboardPhase = 'centered';
+
   if(isTouchDevice){
     const mob=document.getElementById('mobileOnboard');
     if(mob){
@@ -692,6 +741,7 @@ function renderSocial(el,cfg){
 
 document.addEventListener('keydown',e=>{
   if(titleActive){dismissTitle();return;}
+  triggerHintDockTransition();
   if(audioEnabled&&!ambientStarted){startAmbient();ambientStarted=true;}
   const mv=['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','a','d','w','s',' '];
   if(mv.includes(e.key)&&dialogOpen&&Date.now()-boardOpenedAt>500){closeBoard();return;}
