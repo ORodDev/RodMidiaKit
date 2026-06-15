@@ -11,7 +11,37 @@
   #gameCanvas{display:block;width:100%;height:100%;image-rendering:pixelated;image-rendering:crisp-edges;}
   #overlay{position:absolute;inset:0;pointer-events:none;display:flex;align-items:center;justify-content:center;}
   #board{position:absolute;pointer-events:all;transform-origin:center center;}
-  #hint{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.65);color:#ffd;font-size:11px;padding:5px 14px;border-radius:4px;border:1px solid #664;letter-spacing:1px;transition:opacity 0.3s;}
+  #hint {
+    position: absolute;
+    bottom: max(16px, env(safe-area-inset-bottom));
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(13, 27, 62, 0.94);
+    border: 2px solid rgba(255, 215, 0, 0.45);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.7), inset 0 0 10px rgba(0,0,0,0.5);
+    color: #fff;
+    font-size: 13px;
+    padding: 10px 24px;
+    border-radius: 8px;
+    letter-spacing: 0.5px;
+    text-align: center;
+    transition: opacity 0.3s;
+    z-index: 12;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-width: 90%;
+    pointer-events: auto;
+  }
+  @media (max-width: 768px), (pointer: coarse) {
+    #hint {
+      bottom: auto !important;
+      top: max(56px, env(safe-area-inset-top)) !important;
+      font-size: 10px;
+      padding: 6px 14px;
+      gap: 3px;
+    }
+  }
   #fsbtn{position:absolute;top:10px;right:12px;background:rgba(0,0,0,0.5);border:1px solid rgba(255,220,100,0.3);color:rgba(255,220,100,0.6);font-size:9px;padding:4px 8px;border-radius:4px;cursor:pointer;letter-spacing:1px;z-index:10;}
   #audiobtn{position:absolute;top:10px;left:12px;background:rgba(0,0,0,0.5);border:1px solid rgba(255,220,100,0.3);color:rgba(255,220,100,0.6);font-size:9px;padding:4px 8px;border-radius:4px;cursor:pointer;letter-spacing:1px;z-index:10;}
   @keyframes tsFadeIn{from{opacity:0}to{opacity:1}}@keyframes tsFadeOut{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(-25px)}}
@@ -108,7 +138,7 @@
   /* Responsive styles & enhancements */
   @media (pointer: coarse) {
     #hint {
-      display: none !important;
+      display: flex !important;
     }
   }
   @media (max-width: 768px) {
@@ -130,9 +160,14 @@
 <div id="wrap">
   <canvas id="gameCanvas"></canvas>
   <div id="overlay"><div id="board" style="display:none;"></div></div>
-  <div id="hint">Use ← → para caminhar · pressione E para abrir cada placa</div>
+  <div id="hint">
+    <div style="font-weight: bold; color: #ffd700; letter-spacing: 1.5px; font-size: 11px; text-transform: uppercase; margin-bottom: 2px;">💻 Portfólio & Media Kit Interativo</div>
+    <div id="hint-controls" style="color: rgba(255,255,255,0.85); font-size: 10px;">
+      Use as teclas <strong style="color: #ff9944; background: rgba(0,0,0,0.35); padding: 1px 5px; border-radius: 3px; border: 1px solid rgba(255,215,0,0.2);">← →</strong> ou <strong style="color: #ff9944; background: rgba(0,0,0,0.35); padding: 1px 5px; border-radius: 3px; border: 1px solid rgba(255,215,0,0.2);">A D</strong> para andar · <strong style="color: #ff9944; background: rgba(0,0,0,0.35); padding: 1px 5px; border-radius: 3px; border: 1px solid rgba(255,215,0,0.2);">E / ENTER</strong> para ver as placas
+    </div>
+  </div>
   <button id="fsbtn" onclick="toggleFS()">⛶ TELA CHEIA</button>
-  <button id="audiobtn" onclick="toggleAudio()">♪ SOM: OFF</button>
+  <button id="audiobtn" onclick="toggleAudio()">♪ SOM: ON</button>
 
   <!-- Mobile Gamepad Controls -->
   <div id="mobileControls" class="mobile-hud">
@@ -194,12 +229,12 @@ resizeCanvas();
 let cam={x:0};
 let player={x:80,y:GROUND_Y-36,vx:0,vy:0,dir:1,onGround:true};
 let keys={},dialogOpen=false,nearSign=null,time=0,titleActive=true;
-let audioCtx=null,audioEnabled=false,stepTimer=0,stepPhase=0;
+let audioCtx=null,audioEnabled=true,stepTimer=0,stepPhase=0;
 let ambientStarted=false,ambientGain=null;
 let jumpLatch=false,coyoteFrames=0;
 let particles=[];
 let allCoinsCelebration=0;
-let boardsVisited=new Set(),boardOpenedAt=0,directionHintTimer=0;
+let boardsVisited=new Set(),boardOpenedAt=0;
 const GRAVITY=0.45,JUMP_FORCE=-9.5,MAX_FALL=14;
 const terrainPts=[
   [0,310],[60,310],[160,304],[240,293],[310,300],[380,310],
@@ -382,12 +417,12 @@ const BOARDS={
 const signs=[
   {x:15,label:'SOCIAIS',key:'social',portal:true},
   {x:140,label:'INICIO',key:'tavern',sub:'Quem é o RodDev?'},
-  {x:300,label:'NUMEROS',key:'stats',sub:'356M+ visualizações'},
+  {x:300,label:'NUMEROS',key:'stats',sub:'356M+ de views'},
   {x:540,label:'REDES',key:'platforms',sub:'658K inscritos'},
-  {x:780,label:'AUDIENCIA',key:'audience',sub:'Público & Alcance'},
+  {x:780,label:'AUDIENCIA',key:'audience',sub:'Público & Base'},
   {x:1020,label:'MEUS JOGOS',key:'games',sub:'400K+ downloads'},
   {x:1260,label:'MARCAS',key:'brands',sub:'Marcas parceiras'},
-  {x:1500,label:'CONTATO',key:'contact',sub:'contato@rodgame.dev'},
+  {x:1500,label:'CONTATO',key:'contact',sub:'E-mail Comercial'},
   {x:1720,label:'SOCIAIS',key:'social',portal:true},
 ];
 
@@ -462,7 +497,6 @@ function dismissTitle(){
   ts.classList.add('ts-exit');
   setTimeout(()=>{ts.remove();},450);
   if(audioEnabled&&!ambientStarted){startAmbient();ambientStarted=true;}
-  if(!isTouchDevice)directionHintTimer=240;
   if(isTouchDevice){
     const mob=document.getElementById('mobileOnboard');
     if(mob){
@@ -722,6 +756,10 @@ if (isTouchDevice) {
   if (tsPress) {
     tsPress.textContent = 'Toque na tela para começar';
   }
+  const hc = document.getElementById('hint-controls');
+  if (hc) {
+    hc.innerHTML = 'Toque em <strong style="color: #ffd700;">◀ ▶</strong> para andar · aproxime-se de uma placa e toque em <strong style="color: #ffd700;">⚔ VER</strong>';
+  }
 }
 
 function drawSky(){
@@ -869,16 +907,16 @@ function drawSign(sign){
   }
   const gy=Math.round(getTerrainY(sign.x+33));
   ctx.fillStyle='#5a3010';ctx.fillRect(x+33,gy-58,6,63);
-  ctx.fillStyle='#8a5520';ctx.fillRect(x,gy-68,72,38);
-  ctx.fillStyle='#6a4010';ctx.fillRect(x+2,gy-66,68,34);
-  ctx.fillStyle='#4a2a05';ctx.fillRect(x+4,gy-64,64,30);
+  ctx.fillStyle='#8a5520';ctx.fillRect(x-8,gy-70,88,40);
+  ctx.fillStyle='#6a4010';ctx.fillRect(x-6,gy-68,84,36);
+  ctx.fillStyle='#4a2a05';ctx.fillRect(x-4,gy-66,80,32);
   ctx.fillStyle='#c8a060';ctx.font='bold 11px monospace';ctx.textAlign='center';
-  ctx.fillText(sign.label,x+36,gy-50);
+  ctx.fillText(sign.label,x+36,gy-51);
   if(near){
-    ctx.fillStyle=`rgba(255,220,80,${0.7+pulse*0.3})`;ctx.font='bold 9px monospace';ctx.fillText('[E] VER',x+36,gy-38);
-    ctx.strokeStyle=`rgba(255,200,60,${0.3+pulse*0.4})`;ctx.lineWidth=1.5;ctx.strokeRect(x-2,gy-70,76,44);
+    ctx.fillStyle=`rgba(255,220,80,${0.7+pulse*0.3})`;ctx.font='bold 9px monospace';ctx.fillText('[E] VER',x+36,gy-39);
+    ctx.strokeStyle=`rgba(255,200,60,${0.3+pulse*0.4})`;ctx.lineWidth=1.5;ctx.strokeRect(x-10,gy-72,92,44);
   } else if(sign.sub){
-    ctx.fillStyle='rgba(200,160,80,0.65)';ctx.font='7px monospace';
+    ctx.fillStyle='rgba(255,215,100,0.72)';ctx.font='7px monospace';
     ctx.fillText(sign.sub,x+36,gy-39);
   }
   ctx.textAlign='left';
@@ -1021,7 +1059,6 @@ function playCollect(){
 }
 function update(){
   time++;
-  if(directionHintTimer>0&&!dialogOpen&&!titleActive)directionHintTimer--;
 
   // Mobile HUD visibility & interact update
   const mobHUD = document.getElementById('mobileControls');
@@ -1106,21 +1143,8 @@ function draw(){
   drawPlayer();
   drawCelebration();
   drawHUD();
-  drawDirectionHint();
 }
 
-function drawDirectionHint(){
-  if(isTouchDevice||directionHintTimer<=0||dialogOpen||titleActive)return;
-  const fadeIn=directionHintTimer>210?(240-directionHintTimer)/30:1;
-  const fadeOut=directionHintTimer<30?directionHintTimer/30:1;
-  const a=Math.min(fadeIn,fadeOut);
-  ctx.save();ctx.globalAlpha=a;
-  ctx.fillStyle='rgba(0,0,0,0.72)';ctx.fillRect(W/2-172,H/2-16,344,30);
-  ctx.strokeStyle='rgba(255,215,0,0.32)';ctx.lineWidth=1;ctx.strokeRect(W/2-172,H/2-16,344,30);
-  ctx.fillStyle='#ffd700';ctx.font='bold 10px monospace';ctx.textAlign='center';
-  ctx.fillText('→  CAMINHE E ABRA AS PLACAS PARA ME CONHECER  →',W/2,H/2+5);
-  ctx.textAlign='left';ctx.restore();
-}
 function loop(){update();draw();requestAnimationFrame(loop);}
 loop();
 </script>
